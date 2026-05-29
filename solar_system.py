@@ -36,11 +36,107 @@ STARS = [
     for _ in range(3500)
 ]
 
+# ── Moon state ────────────────────────────────────────────────────────────────
+moon = {"angle": random.uniform(0, 360), "speed": 13.0, "orbit": 2.2, "size": 0.27}
+
+# ── Comets ────────────────────────────────────────────────────────────────────
+class Comet:
+    def __init__(self):
+        self.reset(initial=True)
+
+    def reset(self, initial=False):
+        side = random.choice(['left','right','top','bottom'])
+        r = random.uniform(55, 80)
+        if side == 'left':
+            self.x, self.z = -r, random.uniform(-r*0.4, r*0.4)
+        elif side == 'right':
+            self.x, self.z =  r, random.uniform(-r*0.4, r*0.4)
+        elif side == 'top':
+            self.x, self.z = random.uniform(-r*0.4, r*0.4), -r
+        else:
+            self.x, self.z = random.uniform(-r*0.4, r*0.4),  r
+
+        if initial:
+            self.x = random.uniform(-70, 70)
+            self.z = random.uniform(-70, 70)
+
+        tx = random.uniform(-10, 10)
+        tz = random.uniform(-10, 10)
+        dx, dz = tx - self.x, tz - self.z
+        mag = math.sqrt(dx*dx + dz*dz) or 1
+        spd = random.uniform(0.18, 0.40)
+        self.vx = dx/mag * spd
+        self.vz = dz/mag * spd
+        self.vy = random.uniform(-0.04, 0.04)
+        self.y  = random.uniform(-3, 3)
+
+        self.tail_len = random.randint(28, 55)
+        self.size     = random.uniform(0.18, 0.38)
+        self.tail_col = (
+            random.uniform(0.7, 1.0),
+            random.uniform(0.8, 1.0),
+            random.uniform(0.9, 1.0),
+        )
+        self.trail = []
+        self.alive = True
+
+    def update(self, dt, speed_mult):
+        s = speed_mult * 60 * dt
+        self.x += self.vx * s
+        self.y += self.vy * s
+        self.z += self.vz * s
+        self.trail.append((self.x, self.y, self.z))
+        if len(self.trail) > self.tail_len:
+            self.trail.pop(0)
+        if abs(self.x) > 100 or abs(self.z) > 100:
+            self.reset()
+
+    def draw(self):
+        if len(self.trail) < 2:
+            return
+        glDisable(GL_LIGHTING)
+        glDisable(GL_FOG)
+
+        glBegin(GL_LINE_STRIP)
+        for i, (tx, ty, tz) in enumerate(self.trail):
+            alpha = (i / len(self.trail)) * 0.85
+            glColor4f(*self.tail_col, alpha)
+            glVertex3f(tx, ty, tz)
+        glEnd()
+
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE)
+        glDisable(GL_DEPTH_TEST)
+        for gi in range(4):
+            gs = self.size * (1.0 + gi * 0.7)
+            al = 0.35 - gi * 0.07
+            glColor4f(*self.tail_col, al)
+            q = gluNewQuadric()
+            glPushMatrix()
+            glTranslatef(self.x, self.y, self.z)
+            gluSphere(q, gs, 8, 8)
+            gluDeleteQuadric(q)
+            glPopMatrix()
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        glEnable(GL_DEPTH_TEST)
+
+        glColor3f(0.95, 0.97, 1.0)
+        q = gluNewQuadric()
+        glPushMatrix()
+        glTranslatef(self.x, self.y, self.z)
+        gluSphere(q, self.size * 0.6, 10, 10)
+        gluDeleteQuadric(q)
+        glPopMatrix()
+
+        glEnable(GL_FOG)
+        glEnable(GL_LIGHTING)
+
+# spawn 3 comets
+COMETS = [Comet() for _ in range(3)]
+
 cam = {"z": -72, "x": 0.0, "y": 0.0, "rot_x": 22.0, "rot_y": 0.0}
 app = {"paused": False, "speed": 1.0, "time": 0.0,
        "fog": True, "info_name": None, "info_timer": 0,
        "info_sx": 0, "info_sy": 0}
-particles = []
 
 
 def draw_sphere(r, slices=24, stacks=24):
@@ -120,47 +216,39 @@ def draw_planet(planet, t):
         draw_saturn_rings(planet["size"])
     glPopMatrix()
 
+# ── Moon drawing ──────────────────────────────────────────────────────────────
+def draw_moon(earth, t):
+    ea = math.radians(earth["angle"])
+    ex = math.cos(ea) * earth["orbit"]
+    ez = math.sin(ea) * earth["orbit"]
 
-def spawn_particles(x, y, z, color, count=80):
-    for _ in range(count):
-        spd = random.uniform(0.15, 0.55)
-        th  = random.uniform(0, 2 * math.pi)
-        ph  = random.uniform(-math.pi / 2, math.pi / 2)
-        particles.append({
-            "x": x, "y": y, "z": z,
-            "vx": spd * math.cos(ph) * math.cos(th),
-            "vy": spd * math.sin(ph),
-            "vz": spd * math.cos(ph) * math.sin(th),
-            "r": color[0], "g": color[1], "b": color[2],
-            "life": 1.0,
-        })
+    ma = math.radians(moon["angle"])
+    mx_ = ex + math.cos(ma) * moon["orbit"]
+    mz_ = ez + math.sin(ma) * moon["orbit"]
 
-def update_particles(dt):
-    for p in particles:
-        p["x"] += p["vx"]; p["y"] += p["vy"]; p["z"] += p["vz"]
-        p["vy"] -= 0.006
-        p["life"] -= dt * 1.4
-    particles[:] = [p for p in particles if p["life"] > 0]
-
-def draw_particles():
-    if not particles: return
-    glDisable(GL_LIGHTING); glDisable(GL_FOG)
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE)
-    glPointSize(5.5)
-    glBegin(GL_POINTS)
-    for p in particles:
-        glColor4f(p["r"], p["g"], p["b"], p["life"])
-        glVertex3f(p["x"], p["y"], p["z"])
+    glDisable(GL_LIGHTING)
+    glColor4f(1.0, 1.0, 1.0, 0.07)
+    glBegin(GL_LINE_LOOP)
+    for i in range(60):
+        a = math.radians(i * 6)
+        glVertex3f(ex + math.cos(a)*moon["orbit"], 0.0,
+                   ez + math.sin(a)*moon["orbit"])
     glEnd()
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-    glEnable(GL_FOG); glEnable(GL_LIGHTING)
+    glEnable(GL_LIGHTING)
+
+    glPushMatrix()
+    glTranslatef(mx_, 0.0, mz_)
+    glColor3f(0.80, 0.80, 0.78)
+    glMaterialfv(GL_FRONT, GL_SPECULAR,  [0.2, 0.2, 0.2, 1.0])
+    glMaterialfv(GL_FRONT, GL_EMISSION,  [0.0, 0.0, 0.0, 1.0])
+    glMaterialf (GL_FRONT, GL_SHININESS, 10.0)
+    draw_sphere(moon["size"], 14, 14)
+    glPopMatrix()
 
 
-
+# ── HUD ───────────────────────────────────────────────────────────────────────
 def _make_text_surface(font, text, color):
-    """Render text to a pygame surface, flip vertically so OpenGL shows it right-side up."""
     surf = font.render(text, True, color)
-   
     surf = pygame.transform.flip(surf, False, True)
     return surf
 
@@ -189,7 +277,6 @@ def _blit_texture(tid, x, y, w, h):
 
 def draw_hud(fonts):
     font_sm, font_lg = fonts
-
     glMatrixMode(GL_PROJECTION)
     glPushMatrix()
     glLoadIdentity()
@@ -201,34 +288,29 @@ def draw_hud(fonts):
     glDisable(GL_LIGHTING)
     glDisable(GL_FOG)
 
-   
+    # title
     title_surf = _make_text_surface(font_lg, "Solar System Simulation", (255, 215, 50))
     tid, tw, th = _surf_to_texture(title_surf)
     _blit_texture(tid, 12, 12, tw, th)
     glDeleteTextures([tid])
 
-    
+    # planet name above clicked planet
     if app["info_name"] and app["info_timer"] > 0:
         alpha_ratio = min(1.0, app["info_timer"] / 30)
         gv = int(255 * alpha_ratio)
         name_surf = _make_text_surface(font_lg, app["info_name"], (255, gv, 60))
         tid, tw, th = _surf_to_texture(name_surf)
-      
-        nx = int(app["info_sx"] - tw // 2)
-        ny = int(app["info_sy"] - th - 10)
-        
-        nx = max(4, min(WIDTH  - tw - 4, nx))
-        ny = max(4, min(HEIGHT - th - 4, ny))
+        nx = max(4, min(WIDTH  - tw - 4, int(app["info_sx"] - tw // 2)))
+        ny = max(4, min(HEIGHT - th - 4, int(app["info_sy"] - th - 10)))
         _blit_texture(tid, nx, ny, tw, th)
         glDeleteTextures([tid])
 
-
+    # speed indicator
     if app["paused"]:
         spd_text  = "II  PAUSED"
         spd_color = (255, 80, 80)
     else:
         spd_text  = f"SPD  {app['speed']:.1f}x"
-      
         t_spd = (app["speed"] - 0.1) / (12.0 - 0.1)
         sr = int(80  + 175 * min(1.0, t_spd * 2))
         sg = int(220 - 140 * min(1.0, t_spd * 2))
@@ -239,40 +321,27 @@ def draw_hud(fonts):
     _blit_texture(tid, 12, HEIGHT - th - 12, tw, th)
     glDeleteTextures([tid])
 
- 
-    bar_w   = 160
-    bar_h   = 5
-    bar_x   = 12
-    bar_y   = HEIGHT - th - 20
-    filled  = int(bar_w * min(1.0, (app["speed"] - 0.1) / (12.0 - 0.1)))
+    bar_w  = 160; bar_h = 5; bar_x = 12
+    bar_y  = HEIGHT - th - 20
+    filled = int(bar_w * min(1.0, (app["speed"] - 0.1) / (12.0 - 0.1)))
     glDisable(GL_TEXTURE_2D)
-    
     glColor4f(1.0, 1.0, 1.0, 0.15)
     glBegin(GL_QUADS)
-    glVertex2f(bar_x,         bar_y)
-    glVertex2f(bar_x + bar_w, bar_y)
-    glVertex2f(bar_x + bar_w, bar_y + bar_h)
-    glVertex2f(bar_x,         bar_y + bar_h)
+    glVertex2f(bar_x,         bar_y); glVertex2f(bar_x+bar_w, bar_y)
+    glVertex2f(bar_x+bar_w,   bar_y+bar_h); glVertex2f(bar_x, bar_y+bar_h)
     glEnd()
-  
-    t_fill = filled / bar_w
-    fr = min(1.0, t_fill * 2)
-    fg = max(0.0, 1.0 - t_fill)
-    glColor4f(fr, fg, 0.2, 0.85)
+    t_fill = filled / max(1, bar_w)
+    glColor4f(min(1.0,t_fill*2), max(0.0,1.0-t_fill), 0.2, 0.85)
     glBegin(GL_QUADS)
-    glVertex2f(bar_x,          bar_y)
-    glVertex2f(bar_x + filled, bar_y)
-    glVertex2f(bar_x + filled, bar_y + bar_h)
-    glVertex2f(bar_x,          bar_y + bar_h)
+    glVertex2f(bar_x,        bar_y); glVertex2f(bar_x+filled, bar_y)
+    glVertex2f(bar_x+filled, bar_y+bar_h); glVertex2f(bar_x,  bar_y+bar_h)
     glEnd()
+
     glEnable(GL_DEPTH_TEST)
     glEnable(GL_LIGHTING)
-    if app["fog"]:
-        glEnable(GL_FOG)
-    glMatrixMode(GL_PROJECTION)
-    glPopMatrix()
-    glMatrixMode(GL_MODELVIEW)
-    glPopMatrix()
+    if app["fog"]: glEnable(GL_FOG)
+    glMatrixMode(GL_PROJECTION); glPopMatrix()
+    glMatrixMode(GL_MODELVIEW);  glPopMatrix()
 
 
 def check_click(mx, my):
@@ -283,7 +352,6 @@ def check_click(mx, my):
         wx, wy, _ = gluProject(0, 0, 0, mv, prj, vp)
         sy = HEIGHT - wy
         if math.hypot(mx - wx, my - sy) < 36:
-            spawn_particles(0, 0, 0, (1.0, 0.85, 0.0))
             return "Sun", int(wx), int(sy)
     except Exception:
         pass
@@ -294,39 +362,51 @@ def check_click(mx, my):
         try:
             wx, wy, _ = gluProject(px, 0, pz, mv, prj, vp)
             sy = HEIGHT - wy
-            threshold  = max(14, planet["size"] * 18)
-            if math.hypot(mx - wx, my - sy) < threshold:
-                spawn_particles(px, 0, pz, planet["color"])
+            if math.hypot(mx - wx, my - sy) < max(14, planet["size"] * 18):
                 return planet["name"], int(wx), int(sy)
         except Exception:
             pass
+
+    # Moon click detection
+    try:
+        earth   = next(p for p in PLANET_DATA if p["name"] == "Earth")
+        ea      = math.radians(earth["angle"])
+        ex      = math.cos(ea) * earth["orbit"]
+        ez      = math.sin(ea) * earth["orbit"]
+        ma      = math.radians(moon["angle"])
+        mx_     = ex + math.cos(ma) * moon["orbit"]
+        mz_     = ez + math.sin(ma) * moon["orbit"]
+        wx, wy, _ = gluProject(mx_, 0, mz_, mv, prj, vp)
+        sy = HEIGHT - wy
+        if math.hypot(mx - wx, my - sy) < 16:
+            return "Moon", int(wx), int(sy)
+    except Exception:
+        pass
+
     return None, 0, 0
 
 
 def init_gl():
     glViewport(0, 0, WIDTH, HEIGHT)
-    glMatrixMode(GL_PROJECTION)
-    glLoadIdentity()
+    glMatrixMode(GL_PROJECTION); glLoadIdentity()
     gluPerspective(45.0, WIDTH / HEIGHT, 0.1, 500.0)
     glMatrixMode(GL_MODELVIEW)
-    glEnable(GL_DEPTH_TEST)
-    glDepthFunc(GL_LEQUAL)
+    glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LEQUAL)
     glShadeModel(GL_SMOOTH)
-    glEnable(GL_LIGHTING)
-    glEnable(GL_LIGHT0)
+    glEnable(GL_LIGHTING); glEnable(GL_LIGHT0)
     glEnable(GL_COLOR_MATERIAL)
     glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE)
     glLightModelfv(GL_LIGHT_MODEL_AMBIENT, [0.05, 0.05, 0.08, 1.0])
     glEnable(GL_BLEND)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
     glEnable(GL_FOG)
-    glFogi (GL_FOG_MODE,  GL_LINEAR)
+    glFogi(GL_FOG_MODE, GL_LINEAR)
     glFogfv(GL_FOG_COLOR, [0.0, 0.0, 0.025, 1.0])
-    glFogf (GL_FOG_START, 65.0)
-    glFogf (GL_FOG_END,   190.0)
-    glHint (GL_FOG_HINT,  GL_NICEST)
+    glFogf(GL_FOG_START, 65.0); glFogf(GL_FOG_END, 190.0)
+    glHint(GL_FOG_HINT, GL_NICEST)
     glEnable(GL_POINT_SMOOTH)
     glHint(GL_POINT_SMOOTH_HINT, GL_NICEST)
+    glLineWidth(1.4)
 
 
 def main():
@@ -334,13 +414,13 @@ def main():
     pygame.display.set_mode((WIDTH, HEIGHT), DOUBLEBUF | OPENGL)
     pygame.display.set_caption("Solar System Simulation")
     pygame.font.init()
-
     init_gl()
 
     font_sm = pygame.font.SysFont("Consolas", 15)
     font_lg = pygame.font.SysFont("Consolas", 23, bold=True)
     fonts   = (font_sm, font_lg)
     clock   = pygame.time.Clock()
+    earth   = next(p for p in PLANET_DATA if p["name"] == "Earth")
 
     while True:
         dt = clock.tick(60) / 1000.0
@@ -349,10 +429,8 @@ def main():
             if event.type == QUIT:
                 pygame.quit(); sys.exit()
             if event.type == KEYDOWN:
-                if   event.key == K_ESCAPE:
-                    pygame.quit(); sys.exit()
-                elif event.key == K_SPACE:
-                    app["paused"] = not app["paused"]
+                if   event.key == K_ESCAPE:  pygame.quit(); sys.exit()
+                elif event.key == K_SPACE:   app["paused"] = not app["paused"]
                 elif event.key in (K_EQUALS, K_PLUS, K_KP_PLUS):
                     app["speed"] = min(app["speed"] * 1.5, 12.0)
                 elif event.key in (K_MINUS, K_KP_MINUS):
@@ -374,17 +452,19 @@ def main():
         if keys[K_RIGHT]: cam["rot_y"] += 1.6
         if keys[K_UP]:    cam["rot_x"] = max(-88, cam["rot_x"] - 1.6)
         if keys[K_DOWN]:  cam["rot_x"] = min( 88, cam["rot_x"] + 1.6)
-        if keys[K_w]:     cam["z"]     = min(-8,  cam["z"] + 0.55)
+        if keys[K_w]:     cam["z"]     = min(-8,   cam["z"] + 0.55)
         if keys[K_s]:     cam["z"]     = max(-200, cam["z"] - 0.55)
-        if keys[K_a]:     cam["x"]     += 0.35
-        if keys[K_d]:     cam["x"]     -= 0.35
+        if keys[K_a]:     cam["x"]    += 0.35
+        if keys[K_d]:     cam["x"]    -= 0.35
 
         if not app["paused"]:
             app["time"] += dt * app["speed"]
             for p in PLANET_DATA:
                 p["angle"] = (p["angle"] + p["speed"] * dt * app["speed"] * 8) % 360
+            moon["angle"] = (moon["angle"] + moon["speed"] * dt * app["speed"] * 8) % 360
+            for c in COMETS:
+                c.update(dt, app["speed"])
 
-        update_particles(dt)
         if app["info_timer"] > 0:
             app["info_timer"] -= 1
 
@@ -410,9 +490,13 @@ def main():
         draw_sun(app["time"])
         for planet in PLANET_DATA:
             draw_planet(planet, app["time"])
-        draw_particles()
-        draw_hud(fonts)
 
+        draw_moon(earth, app["time"])
+
+        for c in COMETS:
+            c.draw()
+
+        draw_hud(fonts)
         pygame.display.flip()
 
 if __name__ == "__main__":
