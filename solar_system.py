@@ -36,10 +36,10 @@ STARS = [
     for _ in range(3500)
 ]
 
-# ── Moon state ────────────────────────────────────────────────────────────────
+
 moon = {"angle": random.uniform(0, 360), "speed": 13.0, "orbit": 2.2, "size": 0.27}
 
-# ── Comets ────────────────────────────────────────────────────────────────────
+
 class Comet:
     def __init__(self):
         self.reset(initial=True)
@@ -130,7 +130,7 @@ class Comet:
         glEnable(GL_FOG)
         glEnable(GL_LIGHTING)
 
-# spawn 3 comets
+
 COMETS = [Comet() for _ in range(3)]
 
 cam = {"z": -72, "x": 0.0, "y": 0.0, "rot_x": 22.0, "rot_y": 0.0}
@@ -216,7 +216,7 @@ def draw_planet(planet, t):
         draw_saturn_rings(planet["size"])
     glPopMatrix()
 
-# ── Moon drawing ──────────────────────────────────────────────────────────────
+
 def draw_moon(earth, t):
     ea = math.radians(earth["angle"])
     ex = math.cos(ea) * earth["orbit"]
@@ -246,7 +246,7 @@ def draw_moon(earth, t):
     glPopMatrix()
 
 
-# ── HUD ───────────────────────────────────────────────────────────────────────
+
 def _make_text_surface(font, text, color):
     surf = font.render(text, True, color)
     surf = pygame.transform.flip(surf, False, True)
@@ -288,13 +288,13 @@ def draw_hud(fonts):
     glDisable(GL_LIGHTING)
     glDisable(GL_FOG)
 
-    # title
+  
     title_surf = _make_text_surface(font_lg, "Solar System Simulation", (255, 215, 50))
     tid, tw, th = _surf_to_texture(title_surf)
     _blit_texture(tid, 12, 12, tw, th)
     glDeleteTextures([tid])
 
-    # planet name above clicked planet
+    
     if app["info_name"] and app["info_timer"] > 0:
         alpha_ratio = min(1.0, app["info_timer"] / 30)
         gv = int(255 * alpha_ratio)
@@ -305,7 +305,7 @@ def draw_hud(fonts):
         _blit_texture(tid, nx, ny, tw, th)
         glDeleteTextures([tid])
 
-    # speed indicator
+ 
     if app["paused"]:
         spd_text  = "II  PAUSED"
         spd_color = (255, 80, 80)
@@ -367,7 +367,7 @@ def check_click(mx, my):
         except Exception:
             pass
 
-    # Moon click detection
+
     try:
         earth   = next(p for p in PLANET_DATA if p["name"] == "Earth")
         ea      = math.radians(earth["angle"])
