@@ -1,27 +1,3 @@
-"""
-╔══════════════════════════════════════════════════════════╗
-║       🌌 SOLAR SYSTEM SIMULATION — CG Project            ║
-║   Features: Lighting, Shading, Fog, Blending,            ║
-║             Keyboard Control, Click Interaction           ║
-╚══════════════════════════════════════════════════════════╝
-
-INSTALL (one time):
-    pip install pygame PyOpenGL PyOpenGL_accelerate
-
-RUN:
-    python solar_system.py
-
-CONTROLS:
-    ← → ↑ ↓     Rotate camera
-    W / S        Zoom in / out
-    A / D        Pan left / right
-    + / -        Speed up / slow down
-    F            Toggle fog on/off
-    SPACE        Pause / Resume
-    CLICK        Click a planet → Explosion effect!
-    ESC          Quit
-"""
-
 import pygame
 from pygame.locals import *
 from OpenGL.GL import *
@@ -30,11 +6,8 @@ import math
 import random
 import sys
 
-# ─── Window ───────────────────────────────────────────────
 WIDTH, HEIGHT = 1280, 720
 
-# ─── Planet definitions ───────────────────────────────────
-#  name, color (RGB 0-1), radius, orbit_radius, orbit_speed
 PLANET_DATA = [
     {"name": "Mercury", "color": (0.72, 0.72, 0.72), "size": 0.38,
      "orbit": 8.5,  "speed": 4.74, "angle": random.uniform(0, 360)},
@@ -55,38 +28,25 @@ PLANET_DATA = [
      "orbit": 67.0, "speed": 0.54, "angle": random.uniform(0, 360)},
 ]
 
-# ─── Star field (pre-generated) ───────────────────────────
 STARS = [
     (random.uniform(-220, 220),
      random.uniform(-110, 110),
      random.uniform(-220, -5),
-     random.uniform(0.45, 1.0))   # brightness
+     random.uniform(0.45, 1.0))
     for _ in range(3500)
 ]
 
-# ─── Camera & App State ───────────────────────────────────
 cam = {"z": -72, "x": 0.0, "y": 0.0, "rot_x": 22.0, "rot_y": 0.0}
 app = {"paused": False, "speed": 1.0, "time": 0.0,
-       "fog": True, "info_name": None, "info_timer": 0}
+       "fog": True, "info_name": None, "info_timer": 0,
+       "info_sx": 0, "info_sy": 0}
 particles = []
 
-
-# ══════════════════════════════════════════════════════════
-#  OpenGL helpers
-# ══════════════════════════════════════════════════════════
 
 def draw_sphere(r, slices=24, stacks=24):
     q = gluNewQuadric()
     gluSphere(q, r, slices, stacks)
     gluDeleteQuadric(q)
-
-
-def draw_disk(inner, outer, slices=60):
-    q = gluNewQuadric()
-    gluQuadricDrawStyle(q, GLU_FILL)
-    gluDisk(q, inner, outer, slices, 1)
-    gluDeleteQuadric(q)
-
 
 def draw_orbit_ring(radius):
     glDisable(GL_LIGHTING)
@@ -98,47 +58,35 @@ def draw_orbit_ring(radius):
     glEnd()
     glEnable(GL_LIGHTING)
 
-
-# ══════════════════════════════════════════════════════════
-#  Drawing functions
-# ══════════════════════════════════════════════════════════
-
 def draw_stars():
     glDisable(GL_LIGHTING)
     glDisable(GL_FOG)
     glPointSize(1.6)
     glBegin(GL_POINTS)
     for x, y, z, b in STARS:
-        glColor3f(b, b, min(1.0, b + 0.15))    # slightly blueish-white
+        glColor3f(b, b, min(1.0, b + 0.15))
         glVertex3f(x, y, z)
     glEnd()
     glEnable(GL_FOG)
     glEnable(GL_LIGHTING)
 
-
 def draw_sun(t):
     glDisable(GL_LIGHTING)
-
-    # ── Glow layers (additive blend) ──
     glDisable(GL_DEPTH_TEST)
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE)   # additive for glow
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE)
     for i in range(7):
         alpha = 0.055 - i * 0.006
         size  = 3.3  + i * 1.1
         glColor4f(1.0, 0.55 + i * 0.03, 0.0, alpha)
         draw_sphere(size, 16, 16)
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)  # restore
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
     glEnable(GL_DEPTH_TEST)
-
-    # ── Sun surface (animated rotation) ──
     glPushMatrix()
     glRotatef(t * 15, 0, 1, 0)
     glColor3f(1.0, 0.96, 0.15)
     draw_sphere(3.0, 32, 32)
     glPopMatrix()
-
     glEnable(GL_LIGHTING)
-
 
 def draw_saturn_rings(size):
     glDisable(GL_LIGHTING)
@@ -154,37 +102,24 @@ def draw_saturn_rings(size):
     glEnd()
     glEnable(GL_LIGHTING)
 
-
 def draw_planet(planet, t):
     a  = math.radians(planet["angle"])
     px = math.cos(a) * planet["orbit"]
     pz = math.sin(a) * planet["orbit"]
     c  = planet["color"]
-
     glPushMatrix()
     glTranslatef(px, 0.0, pz)
-
-    # Self-rotation
     glRotatef(t * planet["speed"] * 40, 0, 1, 0)
-
-    # Material shading
     glColor3f(*c)
     glMaterialfv(GL_FRONT, GL_SPECULAR,  [0.5, 0.5, 0.5, 1.0])
     glMaterialfv(GL_FRONT, GL_EMISSION,  [0.0, 0.0, 0.0, 1.0])
     glMaterialf (GL_FRONT, GL_SHININESS, 48.0)
     draw_sphere(planet["size"], 28, 28)
-
-    # Saturn rings
     if planet.get("rings"):
         glRotatef(27, 1, 0, 0)
         draw_saturn_rings(planet["size"])
-
     glPopMatrix()
 
-
-# ══════════════════════════════════════════════════════════
-#  Particle system (click explosion)
-# ══════════════════════════════════════════════════════════
 
 def spawn_particles(x, y, z, color, count=80):
     for _ in range(count):
@@ -200,22 +135,16 @@ def spawn_particles(x, y, z, color, count=80):
             "life": 1.0,
         })
 
-
 def update_particles(dt):
     for p in particles:
-        p["x"] += p["vx"]
-        p["y"] += p["vy"]
-        p["z"] += p["vz"]
-        p["vy"] -= 0.006     # gravity
+        p["x"] += p["vx"]; p["y"] += p["vy"]; p["z"] += p["vz"]
+        p["vy"] -= 0.006
         p["life"] -= dt * 1.4
     particles[:] = [p for p in particles if p["life"] > 0]
 
-
 def draw_particles():
-    if not particles:
-        return
-    glDisable(GL_LIGHTING)
-    glDisable(GL_FOG)
+    if not particles: return
+    glDisable(GL_LIGHTING); glDisable(GL_FOG)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE)
     glPointSize(5.5)
     glBegin(GL_POINTS)
@@ -224,13 +153,16 @@ def draw_particles():
         glVertex3f(p["x"], p["y"], p["z"])
     glEnd()
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-    glEnable(GL_FOG)
-    glEnable(GL_LIGHTING)
+    glEnable(GL_FOG); glEnable(GL_LIGHTING)
 
 
-# ══════════════════════════════════════════════════════════
-#  HUD (2D overlay via pygame → OpenGL texture)
-# ══════════════════════════════════════════════════════════
+
+def _make_text_surface(font, text, color):
+    """Render text to a pygame surface, flip vertically so OpenGL shows it right-side up."""
+    surf = font.render(text, True, color)
+   
+    surf = pygame.transform.flip(surf, False, True)
+    return surf
 
 def _surf_to_texture(surf):
     w, h = surf.get_size()
@@ -242,7 +174,6 @@ def _surf_to_texture(surf):
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0,
                  GL_RGBA, GL_UNSIGNED_BYTE, data)
     return tid, w, h
-
 
 def _blit_texture(tid, x, y, w, h):
     glEnable(GL_TEXTURE_2D)
@@ -256,11 +187,9 @@ def _blit_texture(tid, x, y, w, h):
     glEnd()
     glDisable(GL_TEXTURE_2D)
 
-
 def draw_hud(fonts):
     font_sm, font_lg = fonts
 
-    # ── Enter 2D mode ──
     glMatrixMode(GL_PROJECTION)
     glPushMatrix()
     glLoadIdentity()
@@ -272,51 +201,70 @@ def draw_hud(fonts):
     glDisable(GL_LIGHTING)
     glDisable(GL_FOG)
 
-    # Title
-    tid, tw, th = _surf_to_texture(
-        font_lg.render("  Solar System Simulation", True, (255, 215, 50)))
+   
+    title_surf = _make_text_surface(font_lg, "Solar System Simulation", (255, 215, 50))
+    tid, tw, th = _surf_to_texture(title_surf)
     _blit_texture(tid, 12, 12, tw, th)
     glDeleteTextures([tid])
 
-    # Controls panel (right side)
-    lines = [
-        ("CONTROLS", (255, 200, 80)),
-        ("← → ↑ ↓  Rotate Camera", (180, 180, 180)),
-        ("W / S      Zoom",          (180, 180, 180)),
-        ("A / D      Pan",            (180, 180, 180)),
-        ("+ / -      Speed",          (180, 180, 180)),
-        ("F          Toggle Fog",     (180, 180, 180)),
-        ("SPACE      Pause/Resume",   (180, 180, 180)),
-        ("CLICK      Explode Planet", (180, 180, 180)),
-        ("ESC        Quit",           (180, 180, 180)),
-        ("", None),
-        (f"Speed : {app['speed']:.1f}x",
-            (100, 255, 100) if not app["paused"] else (255, 80, 80)),
-        ("PAUSED" if app["paused"] else "RUNNING",
-            (255, 80, 80) if app["paused"] else (100, 255, 100)),
-        (f"Fog   : {'ON' if app['fog'] else 'OFF'}",
-            (100, 200, 255) if app["fog"] else (120, 120, 120)),
-    ]
-    y = 12
-    for text, color in lines:
-        if not text:
-            y += 6
-            continue
-        tid, tw, th = _surf_to_texture(font_sm.render(text, True, color))
-        _blit_texture(tid, WIDTH - tw - 14, y, tw, th)
-        glDeleteTextures([tid])
-        y += th + 4
-
-    # Planet name on click
+    
     if app["info_name"] and app["info_timer"] > 0:
         alpha_ratio = min(1.0, app["info_timer"] / 30)
         gv = int(255 * alpha_ratio)
-        surf = font_lg.render(f"  {app['info_name']}  ", True, (255, gv, 60))
-        tid, tw, th = _surf_to_texture(surf)
-        _blit_texture(tid, WIDTH // 2 - tw // 2, HEIGHT // 2 - th // 2, tw, th)
+        name_surf = _make_text_surface(font_lg, app["info_name"], (255, gv, 60))
+        tid, tw, th = _surf_to_texture(name_surf)
+      
+        nx = int(app["info_sx"] - tw // 2)
+        ny = int(app["info_sy"] - th - 10)
+        
+        nx = max(4, min(WIDTH  - tw - 4, nx))
+        ny = max(4, min(HEIGHT - th - 4, ny))
+        _blit_texture(tid, nx, ny, tw, th)
         glDeleteTextures([tid])
 
-    # ── Restore 3D mode ──
+
+    if app["paused"]:
+        spd_text  = "II  PAUSED"
+        spd_color = (255, 80, 80)
+    else:
+        spd_text  = f"SPD  {app['speed']:.1f}x"
+      
+        t_spd = (app["speed"] - 0.1) / (12.0 - 0.1)
+        sr = int(80  + 175 * min(1.0, t_spd * 2))
+        sg = int(220 - 140 * min(1.0, t_spd * 2))
+        spd_color = (sr, sg, 60)
+
+    spd_surf = _make_text_surface(font_lg, spd_text, spd_color)
+    tid, tw, th = _surf_to_texture(spd_surf)
+    _blit_texture(tid, 12, HEIGHT - th - 12, tw, th)
+    glDeleteTextures([tid])
+
+ 
+    bar_w   = 160
+    bar_h   = 5
+    bar_x   = 12
+    bar_y   = HEIGHT - th - 20
+    filled  = int(bar_w * min(1.0, (app["speed"] - 0.1) / (12.0 - 0.1)))
+    glDisable(GL_TEXTURE_2D)
+    
+    glColor4f(1.0, 1.0, 1.0, 0.15)
+    glBegin(GL_QUADS)
+    glVertex2f(bar_x,         bar_y)
+    glVertex2f(bar_x + bar_w, bar_y)
+    glVertex2f(bar_x + bar_w, bar_y + bar_h)
+    glVertex2f(bar_x,         bar_y + bar_h)
+    glEnd()
+  
+    t_fill = filled / bar_w
+    fr = min(1.0, t_fill * 2)
+    fg = max(0.0, 1.0 - t_fill)
+    glColor4f(fr, fg, 0.2, 0.85)
+    glBegin(GL_QUADS)
+    glVertex2f(bar_x,          bar_y)
+    glVertex2f(bar_x + filled, bar_y)
+    glVertex2f(bar_x + filled, bar_y + bar_h)
+    glVertex2f(bar_x,          bar_y + bar_h)
+    glEnd()
     glEnable(GL_DEPTH_TEST)
     glEnable(GL_LIGHTING)
     if app["fog"]:
@@ -327,88 +275,64 @@ def draw_hud(fonts):
     glPopMatrix()
 
 
-# ══════════════════════════════════════════════════════════
-#  Click detection (3D → 2D projection)
-# ══════════════════════════════════════════════════════════
-
 def check_click(mx, my):
     vp  = glGetIntegerv(GL_VIEWPORT)
     mv  = glGetDoublev(GL_MODELVIEW_MATRIX)
     prj = glGetDoublev(GL_PROJECTION_MATRIX)
-
-    # Sun
     try:
         wx, wy, _ = gluProject(0, 0, 0, mv, prj, vp)
-        if math.hypot(mx - wx, my - (HEIGHT - wy)) < 36:
+        sy = HEIGHT - wy
+        if math.hypot(mx - wx, my - sy) < 36:
             spawn_particles(0, 0, 0, (1.0, 0.85, 0.0))
-            return "☀️  Sun"
+            return "Sun", int(wx), int(sy)
     except Exception:
         pass
-
-    # Planets
     for planet in PLANET_DATA:
         a  = math.radians(planet["angle"])
         px = math.cos(a) * planet["orbit"]
         pz = math.sin(a) * planet["orbit"]
         try:
             wx, wy, _ = gluProject(px, 0, pz, mv, prj, vp)
+            sy = HEIGHT - wy
             threshold  = max(14, planet["size"] * 18)
-            if math.hypot(mx - wx, my - (HEIGHT - wy)) < threshold:
+            if math.hypot(mx - wx, my - sy) < threshold:
                 spawn_particles(px, 0, pz, planet["color"])
-                return "💥  " + planet["name"]
+                return planet["name"], int(wx), int(sy)
         except Exception:
             pass
-    return None
+    return None, 0, 0
 
-
-# ══════════════════════════════════════════════════════════
-#  OpenGL initialisation
-# ══════════════════════════════════════════════════════════
 
 def init_gl():
     glViewport(0, 0, WIDTH, HEIGHT)
-
     glMatrixMode(GL_PROJECTION)
     glLoadIdentity()
     gluPerspective(45.0, WIDTH / HEIGHT, 0.1, 500.0)
     glMatrixMode(GL_MODELVIEW)
-
     glEnable(GL_DEPTH_TEST)
     glDepthFunc(GL_LEQUAL)
     glShadeModel(GL_SMOOTH)
-
-    # Lighting
     glEnable(GL_LIGHTING)
     glEnable(GL_LIGHT0)
     glEnable(GL_COLOR_MATERIAL)
     glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE)
     glLightModelfv(GL_LIGHT_MODEL_AMBIENT, [0.05, 0.05, 0.08, 1.0])
-
-    # Blending
     glEnable(GL_BLEND)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-
-    # Fog
     glEnable(GL_FOG)
     glFogi (GL_FOG_MODE,  GL_LINEAR)
     glFogfv(GL_FOG_COLOR, [0.0, 0.0, 0.025, 1.0])
     glFogf (GL_FOG_START, 65.0)
     glFogf (GL_FOG_END,   190.0)
     glHint (GL_FOG_HINT,  GL_NICEST)
-
-    # Point smoothing
     glEnable(GL_POINT_SMOOTH)
     glHint(GL_POINT_SMOOTH_HINT, GL_NICEST)
 
 
-# ══════════════════════════════════════════════════════════
-#  Main loop
-# ══════════════════════════════════════════════════════════
-
 def main():
     pygame.init()
     pygame.display.set_mode((WIDTH, HEIGHT), DOUBLEBUF | OPENGL)
-    pygame.display.set_caption("🌌 Solar System Simulation — CG Project")
+    pygame.display.set_caption("Solar System Simulation")
     pygame.font.init()
 
     init_gl()
@@ -416,17 +340,14 @@ def main():
     font_sm = pygame.font.SysFont("Consolas", 15)
     font_lg = pygame.font.SysFont("Consolas", 23, bold=True)
     fonts   = (font_sm, font_lg)
-
-    clock = pygame.time.Clock()
+    clock   = pygame.time.Clock()
 
     while True:
         dt = clock.tick(60) / 1000.0
 
-        # ── Events ─────────────────────────────────────
         for event in pygame.event.get():
             if event.type == QUIT:
                 pygame.quit(); sys.exit()
-
             if event.type == KEYDOWN:
                 if   event.key == K_ESCAPE:
                     pygame.quit(); sys.exit()
@@ -440,14 +361,14 @@ def main():
                     app["fog"] = not app["fog"]
                     if app["fog"]: glEnable(GL_FOG)
                     else:          glDisable(GL_FOG)
-
             if event.type == MOUSEBUTTONDOWN and event.button == 1:
-                name = check_click(*event.pos)
+                name, sx, sy = check_click(*event.pos)
                 if name:
                     app["info_name"]  = name
                     app["info_timer"] = 100
+                    app["info_sx"]    = sx
+                    app["info_sy"]    = sy
 
-        # ── Held keys → camera ─────────────────────────
         keys = pygame.key.get_pressed()
         if keys[K_LEFT]:  cam["rot_y"] -= 1.6
         if keys[K_RIGHT]: cam["rot_y"] += 1.6
@@ -458,27 +379,23 @@ def main():
         if keys[K_a]:     cam["x"]     += 0.35
         if keys[K_d]:     cam["x"]     -= 0.35
 
-        # ── Update ─────────────────────────────────────
         if not app["paused"]:
             app["time"] += dt * app["speed"]
             for p in PLANET_DATA:
-                p["angle"] = (p["angle"] + p["speed"] * dt * app["speed"] * 10) % 360
+                p["angle"] = (p["angle"] + p["speed"] * dt * app["speed"] * 8) % 360
 
         update_particles(dt)
         if app["info_timer"] > 0:
             app["info_timer"] -= 1
 
-        # ── Render ─────────────────────────────────────
         glClearColor(0.0, 0.0, 0.018, 1.0)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         glLoadIdentity()
 
-        # Camera
         glTranslatef(cam["x"], cam["y"], cam["z"])
         glRotatef(cam["rot_x"], 1, 0, 0)
         glRotatef(cam["rot_y"], 0, 1, 0)
 
-        # Sun light (point light at origin)
         glLightfv(GL_LIGHT0, GL_POSITION,             [0.0, 1.0, 0.0, 1.0])
         glLightfv(GL_LIGHT0, GL_DIFFUSE,              [1.0, 1.0, 0.95, 1.0])
         glLightfv(GL_LIGHT0, GL_SPECULAR,             [0.9, 0.85, 0.65, 1.0])
@@ -488,26 +405,15 @@ def main():
         glLightf (GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 0.00015)
 
         draw_stars()
-
-        # Orbit rings
         for planet in PLANET_DATA:
             draw_orbit_ring(planet["orbit"])
-
-        # Sun
         draw_sun(app["time"])
-
-        # Planets
         for planet in PLANET_DATA:
             draw_planet(planet, app["time"])
-
-        # Particle explosions
         draw_particles()
-
-        # HUD overlay
         draw_hud(fonts)
 
         pygame.display.flip()
-
 
 if __name__ == "__main__":
     main()
